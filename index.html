@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/styles2.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tauri App</title>
+    <!-- <script type="module" src="/src/api.ts" defer></script> -->
+    <script type="module" src="/src/model.ts" defer></script>
+    <script type="module" src="/src/ui.ts" defer></script>
+  </head>
+
+  <body>
+    <div id="header">
+      <div class="cont">
+        <button class="square" id="reload">⟳</button>
+        <button class="square" id="go_up">↑</button>
+
+        <div id="cont_path">
+          <input type="text" name="" id="path">
+
+          <div id="path_points">
+            <div class="path_point" id="disk">C:</div>
+            <div class="path_point">Folder1</div>
+            <div class="path_point">Folder2</div>
+          </div>
+        </div>
+
+        <!-- <button class="square" id="read">❯</button> -->
+        <!-- <button class="square" id="open_folder_new_window">🗗</button> -->
+        <!-- <button class="square" id="open_folder_stats" style="font-size: 1rem;">🛈</button> -->
+      </div>
+
+      <div class="cont">
+        <input type="radio" class="square" name="output_view" id="list" checked>
+        <input type="radio" class="square" name="output_view" id="table">
+      </div>
+    </div>
+
+    <div id="side_bar">
+      <div class="cont" id="hot_bar">
+        <!-- <div class="item">
+          <div class="icon">O</div>
+          <div class="text">Desktop</div>
+        </div> -->
+      </div>
+
+      <div class="cont" id="disks">
+        <!-- <div class="item">
+          <div class="icon">O</div>
+          <div class="text">C:/</div>
+        </div>
+        <div class="item">
+          <div class="icon">O</div>
+          <div class="text">D:/</div>
+        </div> -->
+      </div>
+    </div>
+
+    <div class="view-list" id="output">
+      <div class="item">
+        <div class="preview"></div>
+        <div class="text"></div>
+      </div>
+      <div class="item">
+        <div class="preview"></div>
+        <div class="text"></div>
+      </div>
+    </div>
+
+    <div id="menu-context"></div>
+
+    <!-- <div class="" id="rename">
+      <button class="square" id="btn-rename-close"></button>
+      <div class="item">
+        <div class="text">Переименовать</div>
+      </div>
+      <div class="item">
+        <div class="text" id="rename-old-path">{old name}</div>
+      </div>
+      <div class="item">
+        <div class="text">в</div>
+      </div>
+
+      <div class="text" id="rename-input-cont">
+        <div class="text" id="path">path/</div>
+        <input type="text" name="">
+        <div class="text" id="ext">.ext</div>
+      </div>
+      <div class="item" id="error">
+        <div class="text">error</div>
+      </div>
+
+      <button class="item" id="btn-rename-confirm">переименовать</button>
+    </div> -->
+
+    <div id="menu-rename"></div>
+
+  </body>
+</html>
