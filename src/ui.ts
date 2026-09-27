@@ -2,8 +2,7 @@
 import { api } from "./api.ts"
 import { FileItem } from "./model.ts"
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { ContextMenu, ContextMenuAction } from "./menu_context.ts";
-import { RenameMenu } from "./menu_rename.ts";
+import { MenuConfirm, MenuInput, MenuContext, ContextMenuAction } from "./menus.ts";
 
 function open_folder_new_window (item: FileItem) {
   const uniqueLabel = 'window_' + Math.random().toString(36).substring(2, 9);
@@ -50,8 +49,7 @@ function validate_path_header_input (path: String) {
     if (/^[A-Za-z]:$/.test(path_splitted[0]) === false) {
         return Error ("path without drive C:");
     }
-    
-    console.log("passed", path);
+
     return true;
 }
 
@@ -59,7 +57,11 @@ async function open_folder (path: String): Promise<boolean> {
     console.log("open_folder", path);
 
     try {
+        map_items_output.clear();
         const entries = await api.read_items_from_directory_path(path);
+
+        const opened_file = await api.fileitem_from_string(path.slice(0, path.length - 1));
+        item_opened_folder = new FileItem(opened_file.path, opened_file.name, true, "");
 
         output!.replaceChildren();
         entries.forEach(entry => {
@@ -78,8 +80,6 @@ async function open_folder (path: String): Promise<boolean> {
 }
 
 function go_parent_folder (path: string) {
-    console.log("finding parent folder of", path);
-
     // if (!validate_path_header_input(path)) return;
 
     const path_splitted = path.split("/");
@@ -154,14 +154,10 @@ const header_input = {
                 validate_path_header_input(header_input.input.value);
 
                 // пытаемся открыть
-                if (await open_folder(header_input.input.value)) {
-                    console.log("success");
+                await open_folder(header_input.input.value);
 
-                    if (!header_input.input.value.endsWith("/")) {
-                        header_input.input.value = header_input.input.value + "/";
-                    }
-                } else {
-                    console.log("fail");
+                if (!header_input.input.value.endsWith("/")) {
+                    header_input.input.value = header_input.input.value + "/";
                 }
 
             } catch (e) {
@@ -200,76 +196,232 @@ header_input.div_path_points?.addEventListener('click', (e) => {
 // ============================================================================
 // CONTEXT MENU
 // ============================================================================
-let menu_context_actions: ContextMenuAction<FileItem>[] = [
-    {
+const menu_context_actions: Record<string, ContextMenuAction<any>> = {
+    "open": {
         name: "Open",
         callback: (fileitem: FileItem) => {
-            console.log('open', fileitem.path);
             open_folder(fileitem.path);
         }
     },
-    {
+    "reload": {
+        name: "Reload",
+        callback: (fileitem: FileItem) => {
+            open_folder(fileitem.path);
+        }
+    },
+    "open_in_new_window": {
         name: "Open in new window",
         callback: (fileitem: FileItem) => {
-            console.log('open in new window', fileitem.path);
             open_folder_new_window(fileitem)
         }
     },
-    {
+    "rename": {
         name: "Rename",
         callback:  async (fileitem: FileItem) => {
-            const new_name = await menu_rename.open(fileitem.name);
+            const new_name = await menu_input.open(["Переименовать", fileitem.name as string], fileitem.name);
+            if (new_name === "") return;
 
-            console.log(new_name);
             // проверить имя
-            // item.rename(new_name)
-
+            if (/[\\\/\:\*\?\"\<\>\|]$/.test(new_name)) {
+                throw new Error('new name contains symbols  \  : * ? " < > |');
+            }
+            fileitem.rename(new_name);
+        }
+    },
+    "create_new_folder": {
+        name: "Create new Folder",
+        callback:  async () => {
+            const new_name = await menu_input.open(["Создать новую папку"], "new folder");
+            // проверить имя
             if (/[\\\/\:\*\?\"\<\>\|]$/.test(new_name)) {
                 throw new Error('new name contains symbols  \  : * ? " < > |');
             }
 
-            fileitem.rename(new_name);
+            try {
+                await api.create_item(item_opened_folder!.path, new_name, true, "");
+
+                const full_path = item_opened_folder!.path + new_name + "/";
+                const name = new_name;
+    
+                const item = new FileItem(full_path, name, true, "");
+                map_items_output.set(item.div, item);
+    
+                output!.replaceChildren();
+                map_items_output.forEach(entry => {
+                    output!.appendChild(entry.div);
+                });
+            } catch (e) {
+                console.error(e);
+            }
+
         }
     },
-];
-let menu_context = new ContextMenu('#menu-context', menu_context_actions);
-let menu_rename = new RenameMenu('#menu-rename');
+    "create_new_file": {
+        name: "Create new File",
+        callback:  async () => {
+            const new_name = await menu_input.open(["Создать файл"], "newfile.txt");
+            // проверить имя
+            if (/[\\\/\:\*\?\"\<\>\|]$/.test(new_name)) {
+                throw new Error('new name contains symbols  \  : * ? " < > |');
+            }
+
+            // нужно проверить если после точки ничего нет
+
+            const last_dot = new_name.lastIndexOf(".");
+            let name = "";
+            let extension = "";
+
+            if (last_dot === -1) {
+                name = new_name;
+            } else {
+                if (new_name.slice(last_dot, new_name.length) === "") {
+                    name = new_name;
+                } else {
+                    name = new_name.slice(0, last_dot);
+                    extension = new_name.slice(last_dot + 1);
+                }
+            }
+
+            try {
+                await api.create_item(item_opened_folder!.path, name, false, extension);
+
+                const full_path = item_opened_folder!.path + new_name;
+    
+                let item: FileItem;
+                if (extension === "") {
+                    item = new FileItem(full_path, `${name}`, false, extension);
+                } else {
+                    item = new FileItem(full_path, `${name}.${extension}`, false, extension);
+                }
+
+                map_items_output.set(item.div, item);
+    
+                output!.replaceChildren();
+                map_items_output.forEach(entry => {
+                    output!.appendChild(entry.div);
+                });
+            } catch (e) {
+                console.error(e);
+            }
+        }
+    },
+    "remove_to_recycle_bin": {
+        name: "Remove to recycle bin",
+        callback:  async (fileitem: FileItem) => {
+            // сделать интерфейс подтверждения
+            const access: boolean = await menu_confirm.open([`Remove ${fileitem.name} to bin?`]);
+
+            if (!access) return;
+            try {
+                console.log('removing', fileitem)
+                await api.remove_to_recycle_bin(fileitem.path);
+                open_folder(header_input.path);
+            } catch (e) {
+                console.error(e);
+            }
+        }
+    },
+}
+
+let menu_context = new MenuContext<FileItem>("body");
+let menu_input = new MenuInput("body");
+let menu_confirm = new MenuConfirm("body");
+
+
+
+
+const map_items_header = new Map<HTMLDivElement, FileItem>();
+const map_items_side_bar = new Map<HTMLDivElement, FileItem>();
+const map_items_output = new Map<HTMLDivElement, FileItem>();
+
+const btn_reload_output: HTMLButtonElement | null = document.querySelector('#header button#reload');
+const btn_go_parent_folder: HTMLButtonElement | null = document.querySelector('#header button#go_up');
+
+const btn_radio_view_list: HTMLInputElement | null = document.querySelector('input[type="radio"]#list');
+const btn_radio_view_table: HTMLInputElement | null = document.querySelector('input[type="radio"]#table');
+
+const div_side_bar_hot_bar: HTMLDivElement | null = document.querySelector('#side_bar #hot_bar');
+const div_side_bar_drives: HTMLDivElement | null = document.querySelector('#side_bar #disks');
+
+const output: HTMLInputElement | null = document.querySelector('#output');
+let item_opened_folder: FileItem | null = null;
+
+let item_selected_index = -1;
+function update_selection (new_index: number) {
+    const children = output!.children;
+
+    children[item_selected_index]?.classList.remove('selected');
+    
+    item_selected_index = new_index;
+    if (item_selected_index < 0) {
+        return;
+    }
+
+    const selected_item = children[item_selected_index];
+
+    if (selected_item) {
+        selected_item.classList.add('selected');
+        selected_item.scrollIntoView({
+            behavior: "smooth",
+            block: "nearest",
+            inline: "nearest"
+        });
+    } 
+}
 
 // ========================================
 // один общий listener для всего сразу
 // ========================================
 document.addEventListener('contextmenu', (e) => {
     e.preventDefault();
+    const target = e.target as HTMLElement;
     
-    if (menu_context !== null) {
-        menu_context.close();
-    }
+    // resets
+    update_selection(-1);
 
-    const item_element = (e.target as HTMLElement).closest('.item') as HTMLDivElement;
+    const item_element = (target as HTMLElement).closest('.item') as HTMLDivElement;
 
-    if (!item_element) {
+    if (item_element) {
         // clear_selection();
+        const fileitem = map_items_output.get(item_element) as FileItem;
+        
+        if (!fileitem) return;
+
+        menu_context.open(e, fileitem, [
+            menu_context_actions.open,
+            menu_context_actions.open_in_new_window,
+            menu_context_actions.rename,
+            menu_context_actions.remove_to_recycle_bin,
+        ]);
         return;
     }
 
-    const fileitem = map_items_output.get(item_element) as FileItem;
-
-    if (fileitem) {
-        menu_context.open(e, fileitem);
-        return;
+    if (target.closest("#output")) {
+        menu_context.open(e, item_opened_folder as FileItem, [
+            menu_context_actions.open,
+            menu_context_actions.reload,
+            menu_context_actions.open_in_new_window,
+            menu_context_actions.create_new_folder,
+            menu_context_actions.create_new_file,
+        ]);
     }
 });
 
 document.addEventListener('click', (e) => {
     const target = e.target as HTMLElement;
 
-    if (!target.closest('#menu_context')) {
-        menu_context.close();
-    }
-
-    const item_element = (e.target as HTMLElement).closest('.item') as HTMLDivElement;
+    // resets
+    update_selection(-1);
+    
+    const item_element = (target as HTMLElement).closest('.item') as HTMLDivElement;
     
     if (item_element) {
+        const fileitem_output = map_items_output.get(item_element);
+        if (fileitem_output) {
+            const children = Array.from(output!.children);
+            update_selection(children.indexOf(target));
+        }
+        
         const fileitem_side_bar = map_items_side_bar.get(item_element);
         if (fileitem_side_bar) {
             if (fileitem_side_bar.is_dir) {
@@ -297,24 +449,35 @@ document.addEventListener('dblclick', (e) => {
         }
     }
 });
+document.addEventListener('keydown', (e) => {
+    if (e.key.includes('Arrow')) {
+        if (menu_context.is_open) return;
+        if (menu_input.is_open) return;
+    }
+    if (e.key === "ArrowUp") {
+        e.preventDefault();
 
+        let new_index = item_selected_index - 1;
 
+        if (new_index < 0) {
+            new_index = map_items_output.size - 1;
+        }
+        update_selection(new_index);
+    }
+    if (e.key === "ArrowDown") {
+        e.preventDefault();
 
-const map_items_header = new Map<HTMLDivElement, FileItem>();
-const map_items_side_bar = new Map<HTMLDivElement, FileItem>();
-const map_items_output = new Map<HTMLDivElement, FileItem>();
+        let new_index = item_selected_index + 1;
 
-const btn_reload_output: HTMLButtonElement | null = document.querySelector('#header button#reload');
-const btn_go_parent_folder: HTMLButtonElement | null = document.querySelector('#header button#go_up');
-
-const btn_radio_view_list: HTMLInputElement | null = document.querySelector('input[type="radio"]#list');
-const btn_radio_view_table: HTMLInputElement | null = document.querySelector('input[type="radio"]#table');
-
-const div_side_bar_hot_bar: HTMLDivElement | null = document.querySelector('#side_bar #hot_bar');
-const div_side_bar_drives: HTMLDivElement | null = document.querySelector('#side_bar #disks');
-
-const output: HTMLInputElement | null = document.querySelector('#output');
-
+        if (new_index > map_items_output.size - 1) {
+            new_index = 0;
+        }
+        update_selection(new_index);
+    }
+});
+// ========================================
+// 
+// ========================================
 
 document.addEventListener('DOMContentLoaded', async () => {
     {
@@ -338,7 +501,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     let preload_path = new URLSearchParams(window.location.search).get("path") as String;
     if (!preload_path) {
-        console.log(Array.from(map_items_side_bar)[0][1]);
         preload_path = Array.from(map_items_side_bar)[0][1].path;
     }
     
@@ -346,17 +508,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         preload_path = preload_path + "/";   
     }
     
-    // preload_path = "C:/Users/pavel/OneDrive/Рабочий стол/1313/";
+    preload_path = "C:/Users/pavel/OneDrive/Рабочий стол/1313/";
     await open_folder(preload_path!);
 
-    // {
-    //     const item = Array.from(map_items_output)[0][1];
-    //     const newname = "newname";
-    
-    //     console.log("find", item.path);
-    //     console.log("rename to", newname);
-    //     item.rename(newname);
-    // }
+    // console.log(await menu_confirm.open(["true?", "or false?"]));
+    // console.log(await menu_input.open(["true?", "or false?"], "vallue"));
 });
 
 btn_go_parent_folder!.addEventListener("click", () => {
@@ -367,12 +523,10 @@ btn_reload_output!.addEventListener("click", () => {
 });
 
 btn_radio_view_list!.addEventListener('click', () => {
-  console.log('list');
   output!.classList.remove('view-table');
   output!.classList.add('view-list');
 });
 btn_radio_view_table!.addEventListener('click', () => {
-  console.log('table');
   output!.classList.remove('view-list');
   output!.classList.add('view-table');
 });

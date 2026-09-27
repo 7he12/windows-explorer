@@ -50,5 +50,17 @@ export const api = {
         let result: any = await invoke("rename", { oldpath: oldpath, newname: new_name });
         // let result = "lsfdj"
         return result;
-    }
+    },
+    async fileitem_from_string (path: String): Promise<any> {
+        let result: any = await invoke("fileitem_from_string", { pathStr: path });
+        return result;
+    },
+    async create_item (parentpath: String, name: String, is_dir: boolean, extension: String): Promise<any> {
+        let result: any = await invoke("create_item", { parentpath: parentpath, name: name, isdir: is_dir, extension: extension });
+        return result;
+    },
+    async remove_to_recycle_bin (path: String): Promise<any> {
+        let result: any = await invoke("remove_to_recycle_bin", { pathstr: path });
+        return result;
+    },
 }

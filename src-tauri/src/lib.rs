@@ -3,6 +3,7 @@ use std::env;
 use std::fs::{ self };
 use std::collections::HashMap;
 use std::time::SystemTime;
+use std::path::PathBuf;
 
 use tauri::{ Manager };
 use walkdir::WalkDir;
@@ -22,12 +23,11 @@ fn remake_slash (path: String) -> String {
 }
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+#[tauri::command]
 fn fileitem_from_string (path_str: &str) -> Result<FileItem, String> {
     let path_buf = Path::new(path_str);
     let metadata = fs::metadata(path_buf).map_err(|e| e.to_string())?;
     let is_dir = metadata.is_dir();
-
-    dbg!(&path_str);
 
     let name = match path_buf.file_name() {
         Some(n) => n.to_string_lossy().into_owned(),
@@ -53,8 +53,6 @@ fn fileitem_from_string (path_str: &str) -> Result<FileItem, String> {
         extension: extension,
         path: path,
     };
-
-    dbg!(&fileitem);
 
     Ok(fileitem)
 }
@@ -144,19 +142,65 @@ fn get_items_drives (app_handle: tauri::AppHandle) -> Result<Vec<FileItem>, Stri
 #[tauri::command]
 fn rename (oldpath: String, newname: String) -> Result<String, String> {
     let old_path = Path::new(oldpath.trim_end_matches(['/', '\\']));
-
-    dbg!(&old_path);
-
+    
     if !old_path.exists() {
         return Err(format!("path {} dos not exist", oldpath));
     }
-
+    
     let parent_path = old_path.parent().ok_or_else(|| "Error: невозможно получить родительский путь");
-    let new_path = parent_path?.join(newname);
+    let new_path = parent_path?.join(&newname);
 
+    if new_path.exists() {
+        return Err(format!("Элемент с именем '{}' уже существует в этой папке", &newname));
+    }
+    
     fs::rename(&old_path, &new_path).map_err(|e| e.to_string())?;
-
+    
     Ok(new_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn create_item (parentpath: String, name: String, isdir: bool, extension: String) -> Result<String, String> {
+    let mut full_path = PathBuf::from(parentpath);
+    
+    let full_name = if isdir {
+        name.to_string()
+    } else {
+        if !extension.is_empty() {
+            format!("{}.{}", name, extension)
+        } else {
+            name.to_string()
+        }
+    };
+    
+    full_path.push(full_name);
+    
+    if full_path.exists() {
+        return Err("Путь уже существует".to_string());
+    }
+    
+    if isdir {
+        fs::create_dir_all(&full_path).map_err(|e| e.to_string())?;
+    } else {
+        fs::File::create(&full_path).map_err(|e| e.to_string())?;
+    }
+    
+    let result = full_path.to_string_lossy().to_string();
+    
+    Ok(result)
+}
+
+#[tauri::command]
+fn remove_to_recycle_bin (pathstr: String) -> Result<String, String> {
+    let path = Path::new(&pathstr);
+
+    if !path.exists() {
+        return Err(format!("path {} dos not exist", pathstr));
+    }
+
+    trash::delete(path).map_err(|e| e.to_string());
+
+    Ok(format!("{} has been removed to recycle bin", pathstr))
 }
 
 
@@ -169,7 +213,10 @@ pub fn run() {
             read_items_from_directory_path,
             get_items_hot_bar,
             get_items_drives,
-            rename
+            rename,
+            fileitem_from_string,
+            create_item,
+            remove_to_recycle_bin,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
